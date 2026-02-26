@@ -3,6 +3,14 @@
 
 ### dotenv ###
 .env
+.env.docker
+
+### Docker ###
+.docker/
+
+### Generated files ###
+output/*
+!output/.gitkeep
 
 ### macOS ###
 # General
