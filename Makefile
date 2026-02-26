@@ -12,8 +12,8 @@ OUTPUT_PATH = ${CWD_ABSOLUTE}/output
 HELPER_SCRIPTS_PATH = ${CWD_ABSOLUTE}/scripts
 
 # Vars
-GIT_USER=smkthat
-GIT_REPO=rocketchat-emoji-autoimport
+GIT_USER?=smkthat
+GIT_REPO?=rocketchat-emoji-autoimport
 GIT_REPO_PATH=repos/${GIT_USER}/${GIT_REPO}
 
 LINE = "$(shell printf '%.0s-' {1..60})"
