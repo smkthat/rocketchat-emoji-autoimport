@@ -1,6 +1,11 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help urls auth import import-no-prompt gen_data gen_yml check-deps install-deps spellcheck rocket-setup rocket-start rocket-stop rocket-reset rocket-logs
+.PHONY: help clean auth import-help rocket-help \
+	gen-all import import-no-prompt \
+	urls yml gen-urls gen-yml \
+	check-deps install-deps \
+	rocket-setup rocket-start rocket-stop rocket-reset rocket-logs spellcheck \
+
 
 # Detect OS
 UNAME_S := $(shell uname -s)
@@ -49,9 +54,6 @@ gen-yml:  ## Сгенерировать output/form.yml файл со списк
 		exit 1; \
 	fi
 	@make yml > ${OUTPUT_PATH}/form.yml
-
-auth:  ## Аутентификация в GitHub CLI (интерактив)
-	@gh auth login
 
 # Category: Зависимости
 
@@ -144,6 +146,9 @@ import-help: ## Показать справку по импорту (import.sh)
 
 rocket-help: ## Показать справку по установке локального Rocket.Chat (setup-rocketchat.sh)
 	@${HELPER_SCRIPTS_PATH}/setup-rocketchat.sh --help
+
+auth:  ## Аутентификация в GitHub CLI (интерактив)
+	@gh auth login
 
 help:  ## Показать это сообщение
 	@${HELPER_SCRIPTS_PATH}/banner.sh
