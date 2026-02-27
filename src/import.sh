@@ -137,6 +137,10 @@ main() {
                 exit 0
                 ;;
             --file|-f)
+                if [ -z "${2:-}" ]; then
+                    log_error "Требуется аргумент для опции $1"
+                    exit 1
+                fi
                 yaml_file="$2"
                 yaml_source_type="file"
                 shift 2
