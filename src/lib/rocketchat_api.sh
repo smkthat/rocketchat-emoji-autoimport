@@ -100,21 +100,46 @@ api_login() {
 #   $1 — server_url: URL Rocket.Chat сервера
 #
 # Возвращает:
-#   Список имён эмодзи (по одному в строке)
+#   0 — если запрос успешен (список имён в stdout)
+#   1 — если произошла ошибка сети или API
+#
+# Выводит:
+#   Список имён эмодзи (по одному в строке) или пустую строку если эмодзи нет
 #
 # Пример:
-#   existing_emojis=$(api_list_emoji_names "$ROCKETCHAT_SERVER_URL")
+#   existing_emojis=$(api_list_emoji_names "$ROCKETCHAT_SERVER_URL") || echo "Ошибка API"
 api_list_emoji_names() {
     local server_url="$1"
-    
     local response
-    response=$(curl -s "${server_url}/api/v1/emoji-custom.list" \
+    local http_code
+
+    # Выполняем запрос с проверкой HTTP статуса
+    response=$(curl -s -w "\n%{http_code}" "${server_url}/api/v1/emoji-custom.list" \
         -H "X-Auth-Token: ${AUTH_TOKEN}" \
-        -H "X-User-Id: ${USER_ID}")
-    
+        -H "X-User-Id: ${USER_ID}" \
+        --connect-timeout 10 \
+        --max-time 30)
+
+    # Извлекаем HTTP код (последняя строка)
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Проверяем HTTP статус
+    if [ "$http_code" != "200" ]; then
+        echo "Ошибка API: HTTP ${http_code}" >&2
+        return 1
+    fi
+
+    # Проверяем, что ответ валидный JSON
+    if ! echo "$response" | jq -e '.' >/dev/null 2>&1; then
+        echo "Ошибка: невалидный JSON ответ" >&2
+        return 1
+    fi
+
     # Извлекаем имена эмодзи из ответа
     # Структура: { emojis: { update: [{ name: "..." }, ...] } }
     echo "$response" | jq -r '.emojis.update[].name' 2>/dev/null || echo ""
+    return 0
 }
 
 # Загружает новый эмодзи на сервер.
