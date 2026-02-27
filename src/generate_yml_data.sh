@@ -8,6 +8,8 @@
 #   ./src/generate_yml_data.sh > output/form.yml
 #
 
+set -euo pipefail
+
 file="output/urls.txt"
 
 # Проверка существования файла
