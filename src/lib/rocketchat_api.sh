@@ -139,7 +139,25 @@ api_create_emoji() {
     local name="$2"
     local image_path="$3"
     local content_type="${4:-application/octet-stream}"
-    
+
+    # Валидируем входные параметры
+    if [ -z "$server_url" ]; then
+        echo "api_create_emoji: server_url не может быть пустым" >&2
+        return 1
+    fi
+    if [ -z "$name" ]; then
+        echo "api_create_emoji: name не может быть пустым" >&2
+        return 1
+    fi
+    if [ -z "$image_path" ]; then
+        echo "api_create_emoji: image_path не может быть пустым" >&2
+        return 1
+    fi
+    if [ ! -f "$image_path" ]; then
+        echo "api_create_emoji: файл не существует: $image_path" >&2
+        return 1
+    fi
+
     local filename
     filename=$(basename "$image_path")
     
@@ -183,6 +201,7 @@ api_create_emoji() {
 emoji_exists() {
     local name="$1"
     local emoji_list="$2"
-    
-    echo "$emoji_list" | grep -q "^${name}$"
+
+    # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
+    echo "$emoji_list" | grep -Fxq "$name"
 }

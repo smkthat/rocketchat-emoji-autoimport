@@ -16,6 +16,36 @@
 set -euo pipefail
 
 # ------------------------------------------------------------------------------
+# Вспомогательные функции
+# ------------------------------------------------------------------------------
+
+# Проверяет, что MIME тип разрешён для загрузки.
+#
+# Аргументы:
+#   $1 — content_type: MIME тип для проверки
+#
+# Возвращает:
+#   0 — если тип разрешён
+#   1 — если тип запрещён
+#
+# Пример:
+#   validate_content_type "image/png" || return 1
+validate_content_type() {
+    local content_type="$1"
+    local allowed_types="image/png image/gif image/jpeg image/webp"
+
+    # Проверяем, что тип входит в список разрешённых
+    for allowed in $allowed_types; do
+        if [ "$content_type" = "$allowed" ]; then
+            return 0
+        fi
+    done
+
+    log_error "Недопустимый MIME тип: ${content_type} (разрешены: ${allowed_types})"
+    return 1
+}
+
+# ------------------------------------------------------------------------------
 # Функции для работы с отдельными эмодзи
 # ------------------------------------------------------------------------------
 
@@ -32,23 +62,30 @@ set -euo pipefail
 #   temp_file=$(download_image "https://example.com/image.png")
 download_image() {
     local src="$1"
-    
     local temp_file
+    local max_size=1048576  # 1 MB (максимальный размер для эмодзи)
+
     temp_file=$(mktemp)
-    
-    if ! curl -sL "$src" -o "$temp_file"; then
+
+    # Загружаем файл с ограничением размера (прекращает загрузку при превышении)
+    if ! curl -sL --max-filesize "$max_size" "$src" -o "$temp_file" 2>/dev/null; then
+        local curl_exit=$?
         rm -f "$temp_file"
-        echo "Ошибка загрузки изображения: ${src}" >&2
+        if [ $curl_exit -eq 63 ]; then
+            echo "Файл превышает максимальный размер 1 MB: ${src}" >&2
+        else
+            echo "Ошибка загрузки изображения: ${src}" >&2
+        fi
         return 1
     fi
-    
+
     # Проверяем, что файл не пустой
     if [ ! -s "$temp_file" ]; then
         rm -f "$temp_file"
         echo "Пустое изображение: ${src}" >&2
         return 1
     fi
-    
+
     echo "$temp_file"
 }
 
@@ -71,25 +108,32 @@ import_emoji() {
     local name="$2"
     local src="$3"
     local existing_emojis="${4:-}"
-    
+    local temp_file=""
+
     # Проверяем, существует ли уже эмодзи
     if [ -n "$existing_emojis" ]; then
-        if echo "$existing_emojis" | grep -q "^${name}$"; then
+        # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
+        if echo "$existing_emojis" | grep -Fxq "$name"; then
             echo "Emoji ${name} уже существует, пропускаем"
             return 0
         fi
     fi
-    
+
     # Скачиваем изображение
-    local temp_file
     temp_file=$(download_image "$src") || return 1
-    
+
     # Определяем тип контента
     local filename
     filename=$(basename "$src")
     local content_type
     content_type=$(get_content_type "$filename")
-    
+
+    # Валидируем MIME тип перед загрузкой
+    validate_content_type "$content_type" || {
+        rm -f "$temp_file"
+        return 1
+    }
+
     # Загружаем эмодзи на сервер
     local error_msg
     if ! error_msg=$(api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1); then
@@ -97,10 +141,10 @@ import_emoji() {
         echo "Ошибка импорта эмодзи ${name}: ${error_msg}" >&2
         return 1
     fi
-    
-    # Очищаем временный файл
+
+    # Очищаем временный файл сразу после использования
     rm -f "$temp_file"
-    
+
     echo "Успешно добавлен эмодзи: ${name}"
     return 0
 }
@@ -126,6 +170,7 @@ import_emojis_from_file() {
     local server_url="$1"
     local yaml_path="$2"
     local existing_emojis="$3"
+    local temp_file=""
 
     # Читаем и парсим YAML файл
     local yaml_content
@@ -160,14 +205,14 @@ import_emojis_from_file() {
         echo "[${current_index}/${total_count}] Обработка: ${name}"
 
         # Проверяем, существует ли уже эмодзи
-        if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -q "^${name}$"; then
+        # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
+        if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
             echo "  → уже существует, пропускаем"
             ((skipped_count++)) || true
             continue
         fi
 
         # Скачиваем изображение
-        local temp_file
         temp_file=$(download_image "$src")
         if [ $? -ne 0 ]; then
             ((error_count++)) || true
@@ -180,6 +225,13 @@ import_emojis_from_file() {
         local content_type
         content_type=$(get_content_type "$filename")
 
+        # Валидируем MIME тип перед загрузкой
+        if ! validate_content_type "$content_type"; then
+            rm -f "$temp_file"
+            ((error_count++)) || true
+            continue
+        fi
+
         # Загружаем эмодзи на сервер
         if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type"; then
             echo "  → успешно добавлен"
@@ -189,8 +241,9 @@ import_emojis_from_file() {
             ((error_count++)) || true
         fi
 
-        # Очищаем временный файл
+        # Немедленно очищаем временный файл после использования
         rm -f "$temp_file"
+        temp_file=""
 
     done <<< "$emoji_list"
 
@@ -227,6 +280,7 @@ import_all_emojis() {
     local server_url="$1"
     local yaml_url="$2"
     local existing_emojis="$3"
+    local temp_file=""
 
     # Загружаем и парсим YAML
     local emoji_list
@@ -255,14 +309,14 @@ import_all_emojis() {
         echo "[${current_index}/${total_count}] Обработка: ${name}"
 
         # Проверяем, существует ли уже эмодзи
-        if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -q "^${name}$"; then
+        # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
+        if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
             echo "  → уже существует, пропускаем"
             ((skipped_count++)) || true
             continue
         fi
 
         # Скачиваем изображение
-        local temp_file
         temp_file=$(download_image "$src")
         if [ $? -ne 0 ]; then
             ((error_count++)) || true
@@ -275,6 +329,13 @@ import_all_emojis() {
         local content_type
         content_type=$(get_content_type "$filename")
 
+        # Валидируем MIME тип перед загрузкой
+        if ! validate_content_type "$content_type"; then
+            rm -f "$temp_file"
+            ((error_count++)) || true
+            continue
+        fi
+
         # Загружаем эмодзи на сервер
         if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type"; then
             echo "  → успешно добавлен"
@@ -284,8 +345,9 @@ import_all_emojis() {
             ((error_count++)) || true
         fi
 
-        # Очищаем временный файл
+        # Немедленно очищаем временный файл после использования
         rm -f "$temp_file"
+        temp_file=""
 
     done <<< "$emoji_list"
 
