@@ -125,6 +125,9 @@ api_list_emoji_names() {
 #
 # Пример:
 #   api_create_emoji "$ROCKETCHAT_SERVER_URL" "smile" "/tmp/smile.png" "image/png"
+#
+# Документация API:
+#   https://github.com/FXinnovation/RocketChat-docs/tree/master/developer-guides/rest-api/emoji-custom/create
 api_create_emoji() {
     local server_url="$1"
     local name="$2"
