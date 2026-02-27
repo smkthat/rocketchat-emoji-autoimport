@@ -45,15 +45,19 @@ api_login() {
     local server_url="$1"
     local username="$2"
     local password="$3"
-    
+
     local login_response
     local response_http_code
-    
+    local json_data
+
+    # Формируем JSON с чувствительными данными в переменной (не в командной строке)
+    json_data=$(printf '{"user":"%s","password":"%s"}' "$username" "$password")
+
     # Выполняем запрос на аутентификацию
     login_response=$(curl -s -w "\n%{http_code}" -X POST "${server_url}/api/v1/login" \
         -H "Content-Type: application/json" \
-        -d "{\"user\":\"${username}\",\"password\":\"${password}\"}")
-    
+        --data-binary "$json_data")
+
     # Последняя строка — HTTP код
     response_http_code=$(echo "$login_response" | tail -n1)
     login_response=$(echo "$login_response" | sed '$d')
