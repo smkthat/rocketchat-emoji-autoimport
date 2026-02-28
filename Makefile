@@ -53,6 +53,11 @@ gen-yml:  ## Сгенерировать output/form.yml файл со списк
 		echo "Сначала выполните: make gen-urls или make gen-all" >&2; \
 		exit 1; \
 	fi
+	@if [ ! -s ${OUTPUT_PATH}/urls.txt ]; then \
+		echo "Ошибка: ${OUTPUT_PATH}/urls.txt пуст." >&2; \
+		echo "Проверьте наличие emoji в репозитории" >&2; \
+		exit 1; \
+	fi
 	@make yml > ${OUTPUT_PATH}/form.yml
 
 # Category: Зависимости
