@@ -19,6 +19,29 @@ set -euo pipefail
 # Вспомогательные функции
 # ------------------------------------------------------------------------------
 
+# Выводит статус обработки эмодзи в однострочном формате.
+#
+# Аргументы:
+#   $1 — current: Текущий индекс
+#   $2 — total: Всего эмодзи
+#   $3 — name: Имя эмодзи
+#   $4 — symbol: Символ статуса (✓, ⊖, ✗)
+#   $5 — message: Сообщение статуса
+#   $6 — max_name_len: Максимальная длина имени (опционально, по умолчанию 30)
+#
+# Пример:
+#   print_status 1 10 "smile" "✓" "добавлен"
+print_status() {
+    local current="$1"
+    local total="$2"
+    local name="$3"
+    local symbol="$4"
+    local message="$5"
+    local max_name_len="${6:-30}"
+    
+    printf "[%3d/%d] Обработка: %-${max_name_len}s %s %s\n" "$current" "$total" "$name" "$symbol" "$message"
+}
+
 # Проверяет, что MIME тип разрешён для загрузки.
 #
 # Аргументы:
@@ -125,6 +148,14 @@ import_emoji() {
     # Определяем тип контента
     local filename
     filename=$(basename "$src")
+    
+    # Sanitization: проверяем на path traversal
+    if [[ "$filename" == *..* ]]; then
+        log_error "Невалидное имя файла (path traversal): ${filename}"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
     local content_type
     content_type=$(get_content_type "$filename")
 
@@ -190,7 +221,16 @@ import_emojis_from_file() {
         return 0
     fi
 
-    echo "Обработка ${total_count} эмодзи из файла..."
+    # Вычисляем максимальную длину имени для форматирования вывода
+    local max_name_len=0
+    local temp_name=""
+    while IFS='|' read -r temp_name _; do
+        [ -z "$temp_name" ] && continue
+        local name_len=${#temp_name}
+        if [ "$name_len" -gt "$max_name_len" ]; then
+            max_name_len="$name_len"
+        fi
+    done <<< "$emoji_list"
 
     local uploaded_count=0
     local skipped_count=0
@@ -202,44 +242,73 @@ import_emojis_from_file() {
         [ -z "$name" ] && continue
 
         ((current_index++)) || true
-        echo "[${current_index}/${total_count}] Обработка: ${name}"
-
+        
+        # Форматируем вывод: [1/169] Обработка: hello   ✓ добавлен
+        local status_msg=""
+        local status_symbol=""
+        
         # Проверяем, существует ли уже эмодзи
         # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
         if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
-            echo "  → уже существует, пропускаем"
+            status_symbol="⊖"
+            status_msg="уже существует"
             ((skipped_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Скачиваем изображение
         temp_file=$(download_image "$src")
         if [ $? -ne 0 ]; then
+            status_symbol="✗"
+            status_msg="ошибка загрузки файла"
             ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Определяем тип контента
         local filename
         filename=$(basename "$src")
+
+        # Sanitization: проверяем на path traversal
+        if [[ "$filename" == *..* ]]; then
+            log_error "Невалидное имя файла (path traversal): ${filename}"
+            rm -f "$temp_file"
+            status_symbol="✗"
+            status_msg="невалидное имя файла"
+            ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            continue
+        fi
+
         local content_type
         content_type=$(get_content_type "$filename")
 
         # Валидируем MIME тип перед загрузкой
         if ! validate_content_type "$content_type"; then
             rm -f "$temp_file"
+            status_symbol="✗"
+            status_msg="недопустимый MIME тип"
             ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Загружаем эмодзи на сервер
-        if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type"; then
-            echo "  → успешно добавлен"
+        local error_msg=""
+        if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1; then
+            status_symbol="✓"
+            status_msg="добавлен"
             ((uploaded_count++)) || true
         else
-            echo "  → ошибка загрузки" >&2
+            error_msg=$(api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1 | head -c 50)
+            status_symbol="✗"
+            status_msg="ошибка: ${error_msg}"
             ((error_count++)) || true
         fi
+        
+        print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
 
         # Немедленно очищаем временный файл после использования
         rm -f "$temp_file"
@@ -294,7 +363,19 @@ import_all_emojis() {
         return 0
     fi
 
+    # Вычисляем максимальную длину имени для форматирования вывода
+    local max_name_len=0
+    local temp_name=""
+    while IFS='|' read -r temp_name _; do
+        [ -z "$temp_name" ] && continue
+        local name_len=${#temp_name}
+        if [ "$name_len" -gt "$max_name_len" ]; then
+            max_name_len="$name_len"
+        fi
+    done <<< "$emoji_list"
+
     echo "Обработка ${total_count} эмодзи из YAML..."
+    echo ""
 
     local uploaded_count=0
     local skipped_count=0
@@ -306,44 +387,73 @@ import_all_emojis() {
         [ -z "$name" ] && continue
 
         ((current_index++)) || true
-        echo "[${current_index}/${total_count}] Обработка: ${name}"
+        
+        # Форматируем вывод: [1/169] Обработка: a                              ✓ добавлен
+        local status_msg=""
+        local status_symbol=""
 
         # Проверяем, существует ли уже эмодзи
         # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
         if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
-            echo "  → уже существует, пропускаем"
+            status_symbol="⊖"
+            status_msg="уже существует"
             ((skipped_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Скачиваем изображение
         temp_file=$(download_image "$src")
         if [ $? -ne 0 ]; then
+            status_symbol="✗"
+            status_msg="ошибка загрузки файла"
             ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Определяем тип контента
         local filename
         filename=$(basename "$src")
+
+        # Sanitization: проверяем на path traversal
+        if [[ "$filename" == *..* ]]; then
+            log_error "Невалидное имя файла (path traversal): ${filename}"
+            rm -f "$temp_file"
+            status_symbol="✗"
+            status_msg="невалидное имя файла"
+            ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            continue
+        fi
+
         local content_type
         content_type=$(get_content_type "$filename")
 
         # Валидируем MIME тип перед загрузкой
         if ! validate_content_type "$content_type"; then
             rm -f "$temp_file"
+            status_symbol="✗"
+            status_msg="недопустимый MIME тип"
             ((error_count++)) || true
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             continue
         fi
 
         # Загружаем эмодзи на сервер
-        if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type"; then
-            echo "  → успешно добавлен"
+        local error_msg=""
+        if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1; then
+            status_symbol="✓"
+            status_msg="добавлен"
             ((uploaded_count++)) || true
         else
-            echo "  → ошибка загрузки" >&2
+            error_msg=$(api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1 | head -c 50)
+            status_symbol="✗"
+            status_msg="ошибка: ${error_msg}"
             ((error_count++)) || true
         fi
+        
+        print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
 
         # Немедленно очищаем временный файл после использования
         rm -f "$temp_file"

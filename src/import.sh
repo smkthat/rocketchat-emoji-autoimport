@@ -119,7 +119,6 @@ EOF
 main() {
     local no_prompt=0
     local yaml_file="output/form.yml"
-    local yaml_source_type="file"  # "url" или "file"
 
     # Парсим аргументы командной строки
     while [[ $# -gt 0 ]]; do
@@ -142,7 +141,6 @@ main() {
                     exit 1
                 fi
                 yaml_file="$2"
-                yaml_source_type="file"
                 shift 2
                 ;;
             *)
@@ -184,26 +182,11 @@ main() {
 
     # Если не режим --no-prompt и нет обязательных переменных, запрашиваем
     if [ "$no_prompt" -eq 0 ]; then
-        # Для URL источника требуется EMOJI_YAML_URL
-        if [ "$yaml_source_type" = "url" ] && [ -z "$EMOJI_YAML_URL" ]; then
-            collect_all_config \
-                "$ROCKETCHAT_SERVER_URL" \
-                "$EMOJI_YAML_URL" \
-                "$ADMIN_USERNAME"
+        # Запрашиваем только недостающие значения
+        if [ -z "$ROCKETCHAT_SERVER_URL" ] || \
+           [ -z "$ADMIN_USERNAME" ] || \
+           [ -z "$ADMIN_PASSWORD" ]; then
 
-            # Спрашиваем подтверждение
-            if ! confirm_config; then
-                exit 0
-            fi
-        # Для файлового источника требуются только учётные данные
-        elif [ "$yaml_source_type" = "file" ] && \
-             ([ -z "$ROCKETCHAT_SERVER_URL" ] || \
-              [ -z "$ADMIN_USERNAME" ] || \
-              [ -z "$ADMIN_PASSWORD" ]); then
-            # Запрашиваем только недостающие значения
-            local default_server="${ROCKETCHAT_SERVER_URL:-}"
-            local default_user="${ADMIN_USERNAME:-}"
-            
             if [ -z "$ROCKETCHAT_SERVER_URL" ]; then
                 prompt "Rocket.Chat сервер URL" "" "ROCKETCHAT_SERVER_URL"
             fi
@@ -211,7 +194,7 @@ main() {
                 prompt "Rocket.Chat админ username" "" "ADMIN_USERNAME"
             fi
             prompt_secret "Rocket.Chat админ пароль" "ADMIN_PASSWORD"
-            
+
             echo ""
         fi
     fi
@@ -225,15 +208,6 @@ main() {
     fi
 
     if ! validate_server_url; then
-        exit 1
-    fi
-
-    # Валидируем YAML источник
-    if [ "$yaml_source_type" = "url" ] && [ -z "$EMOJI_YAML_URL" ]; then
-        log_error "EMOJI_YAML_URL не указан"
-        exit 1
-    fi
-    if [ "$yaml_source_type" = "url" ] && ! validate_yaml_url; then
         exit 1
     fi
 
@@ -260,16 +234,9 @@ main() {
     log_info "Начало импорта..."
     echo ""
 
-    if [ "$yaml_source_type" = "file" ]; then
-        if ! import_emojis_from_file "$ROCKETCHAT_SERVER_URL" "$yaml_file" "$existing_emojis"; then
-            log_error "Импорт завершён с ошибками"
-            exit 1
-        fi
-    else
-        if ! import_all_emojis "$ROCKETCHAT_SERVER_URL" "$EMOJI_YAML_URL" "$existing_emojis"; then
-            log_error "Импорт завершён с ошибками"
-            exit 1
-        fi
+    if ! import_emojis_from_file "$ROCKETCHAT_SERVER_URL" "$yaml_file" "$existing_emojis"; then
+        log_error "Импорт завершён с ошибками"
+        exit 1
     fi
 
     echo ""

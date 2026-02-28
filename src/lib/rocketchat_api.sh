@@ -67,11 +67,16 @@ api_login() {
     # Проверяем HTTP статус
     if [ "$response_http_code" != "200" ]; then
         local error_message
-        error_message=$(echo "$login_response" | jq -r '.message // "Неизвестная ошибка"')
+        # Проверяем что ответ валидный JSON перед парсингом
+        if echo "$login_response" | jq -e '.' >/dev/null 2>&1; then
+            error_message=$(echo "$login_response" | jq -r '.message // "Неизвестная ошибка"')
+        else
+            error_message="Невалидный JSON ответ"
+        fi
         echo "Ошибка аутентификации (HTTP ${response_http_code}): ${error_message}" >&2
         return 1
     fi
-    
+
     # Извлекаем токены
     AUTH_TOKEN=$(echo "$login_response" | jq -r '.data.authToken')
     USER_ID=$(echo "$login_response" | jq -r '.data.userId')
@@ -185,15 +190,53 @@ api_create_emoji() {
 
     local filename
     filename=$(basename "$image_path")
-    
+
     local response
-    response=$(curl -s -X POST "${server_url}/api/v1/emoji-custom.create" \
+    local http_code
+    
+    # Выполняем запрос с проверкой HTTP статуса
+    response=$(curl -s -w "\n%{http_code}" -X POST "${server_url}/api/v1/emoji-custom.create" \
         -H "X-Auth-Token: ${AUTH_TOKEN}" \
         -H "X-User-Id: ${USER_ID}" \
         -F "name=${name}" \
         -F "aliases=" \
         -F "emoji=@${image_path};filename=${filename};type=${content_type}")
     
+    # Извлекаем HTTP код
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+    
+    # Обрабатываем HTTP ошибки
+    case "$http_code" in
+        200)
+            # Успешный ответ, продолжаем обработку
+            ;;
+        401)
+            echo "Ошибка API: неавторизованный доступ (HTTP 401)" >&2
+            return 1
+            ;;
+        403)
+            echo "Ошибка API: доступ запрещён (HTTP 403)" >&2
+            return 1
+            ;;
+        404)
+            echo "Ошибка API: ресурс не найден (HTTP 404)" >&2
+            return 1
+            ;;
+        429)
+            echo "Ошибка API: слишком много запросов (HTTP 429)" >&2
+            return 1
+            ;;
+        500)
+            echo "Ошибка API: внутренняя ошибка сервера (HTTP 500)" >&2
+            return 1
+            ;;
+        *)
+            echo "Ошибка API: HTTP ${http_code}" >&2
+            return 1
+            ;;
+    esac
+
     local success
     success=$(echo "$response" | jq -r '.success')
     
