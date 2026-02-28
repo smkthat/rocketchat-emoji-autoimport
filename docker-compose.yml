@@ -40,8 +40,13 @@ services:
         } catch (e) {
           print("Replica set may already be initialized: " + e);
         }
-        return 0;
       '
+    healthcheck:
+      test: mongosh --host db:27017 --quiet --eval 'rs.status().ok === 1'
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   # Rocket.Chat
   rocketchat:
