@@ -253,7 +253,9 @@ import_emojis_from_file() {
             status_symbol="⊖"
             status_msg="уже существует"
             ((skipped_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            if [ "${DEBUG:-0}" = "1" ]; then
+                print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            fi
             continue
         fi
 
@@ -308,7 +310,9 @@ import_emojis_from_file() {
             ((error_count++)) || true
         fi
         
-        print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+        if [ "${DEBUG:-0}" = "1" ]; then
+            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+        fi
 
         # Немедленно очищаем временный файл после использования
         rm -f "$temp_file"
@@ -317,7 +321,6 @@ import_emojis_from_file() {
     done <<< "$emoji_list"
 
     # Выводим статистику
-    echo ""
     echo "=== Результаты импорта ==="
     echo "  Всего: ${total_count}"
     echo "  Добавлено: ${uploaded_count}"
