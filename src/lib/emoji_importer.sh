@@ -184,34 +184,26 @@ import_emoji() {
 # Функции пакетной обработки
 # ------------------------------------------------------------------------------
 
-# Импортирует список эмодзи из локального YAML файла.
+# Обрабатывает список эмодзи из YAML данных.
 #
 # Аргументы:
 #   $1 — server_url: URL Rocket.Chat сервера
-#   $2 — yaml_path: Путь к YAML файлу
+#   $2 — emoji_list: Список name|src (newline-separated)
 #   $3 — existing_emojis: Список существующих эмодзи
+#   $4 — show_progress: Показывать прогресс (0 или 1)
 #
 # Возвращает:
 #   0 — если все эмодзи обработаны (успешно или пропущены)
 #   1 — если были критические ошибки
 #
 # Пример:
-#   import_emojis_from_file "$ROCKETCHAT_SERVER_URL" "./form.yml" "$existing"
-import_emojis_from_file() {
+#   import_emoji_list "$SERVER_URL" "$emoji_list" "$existing" 1
+import_emoji_list() {
     local server_url="$1"
-    local yaml_path="$2"
+    local emoji_list="$2"
     local existing_emojis="$3"
+    local show_progress="${4:-0}"
     local temp_file=""
-
-    # Читаем и парсим YAML файл
-    local yaml_content
-    yaml_content=$(cat "$yaml_path") || {
-        log_error "Не удалось прочитать файл: ${yaml_path}"
-        return 1
-    }
-
-    local emoji_list
-    emoji_list=$(parse_emoji_yaml "$yaml_content")
 
     local total_count
     total_count=$(count_emojis "$emoji_list")
@@ -242,18 +234,16 @@ import_emojis_from_file() {
         [ -z "$name" ] && continue
 
         ((current_index++)) || true
-        
-        # Форматируем вывод: [1/169] Обработка: hello   ✓ добавлен
+
         local status_msg=""
         local status_symbol=""
-        
+
         # Проверяем, существует ли уже эмодзи
-        # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
         if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
             status_symbol="⊖"
             status_msg="уже существует"
             ((skipped_count++)) || true
-            if [ "${DEBUG:-0}" = "1" ]; then
+            if [ "$show_progress" -eq 1 ] || [ "${DEBUG:-0}" = "1" ]; then
                 print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
             fi
             continue
@@ -265,7 +255,10 @@ import_emojis_from_file() {
             status_symbol="✗"
             status_msg="ошибка загрузки файла"
             ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            if [ "$show_progress" -eq 1 ]; then
+                print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            fi
+            rm -f "$temp_file" 2>/dev/null || true
             continue
         fi
 
@@ -280,7 +273,9 @@ import_emojis_from_file() {
             status_symbol="✗"
             status_msg="невалидное имя файла"
             ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            if [ "$show_progress" -eq 1 ]; then
+                print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            fi
             continue
         fi
 
@@ -293,7 +288,9 @@ import_emojis_from_file() {
             status_symbol="✗"
             status_msg="недопустимый MIME тип"
             ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            if [ "$show_progress" -eq 1 ]; then
+                print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
+            fi
             continue
         fi
 
@@ -309,8 +306,8 @@ import_emojis_from_file() {
             status_msg="ошибка: ${error_msg}"
             ((error_count++)) || true
         fi
-        
-        if [ "${DEBUG:-0}" = "1" ]; then
+
+        if [ "$show_progress" -eq 1 ] || [ "${DEBUG:-0}" = "1" ]; then
             print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
         fi
 
@@ -321,7 +318,6 @@ import_emojis_from_file() {
     done <<< "$emoji_list"
 
     # Выводим статистику
-    echo "=== Результаты импорта ==="
     echo "  Всего: ${total_count}"
     echo "  Добавлено: ${uploaded_count}"
     echo "  Пропущено: ${skipped_count}"
@@ -333,6 +329,37 @@ import_emojis_from_file() {
     fi
 
     return 0
+}
+
+# Импортирует список эмодзи из локального YAML файла.
+#
+# Аргументы:
+#   $1 — server_url: URL Rocket.Chat сервера
+#   $2 — yaml_path: Путь к YAML файлу
+#   $3 — existing_emojis: Список существующих эмодзи
+#
+# Возвращает:
+#   0 — если все эмодзи обработаны (успешно или пропущены)
+#   1 — если были критические ошибки
+#
+# Пример:
+#   import_emojis_from_file "$ROCKETCHAT_SERVER_URL" "./form.yml" "$existing"
+import_emojis_from_file() {
+    local server_url="$1"
+    local yaml_path="$2"
+    local existing_emojis="$3"
+
+    # Читаем и парсим YAML файл
+    local yaml_content
+    yaml_content=$(cat "$yaml_path") || {
+        log_error "Не удалось прочитать файл: ${yaml_path}"
+        return 1
+    }
+
+    local emoji_list
+    emoji_list=$(parse_emoji_yaml "$yaml_content")
+
+    import_emoji_list "$server_url" "$emoji_list" "$existing_emojis" 0
 }
 
 # Импортирует список эмодзи из YAML по URL.
@@ -352,132 +379,15 @@ import_all_emojis() {
     local server_url="$1"
     local yaml_url="$2"
     local existing_emojis="$3"
-    local temp_file=""
 
     # Загружаем и парсим YAML
     local emoji_list
     emoji_list=$(parse_emoji_yaml_url "$yaml_url") || return 1
 
-    local total_count
-    total_count=$(count_emojis "$emoji_list")
-
-    if [ "$total_count" -eq 0 ]; then
-        echo "Эмодзи не найдены в YAML файле"
-        return 0
-    fi
-
-    # Вычисляем максимальную длину имени для форматирования вывода
-    local max_name_len=0
-    local temp_name=""
-    while IFS='|' read -r temp_name _; do
-        [ -z "$temp_name" ] && continue
-        local name_len=${#temp_name}
-        if [ "$name_len" -gt "$max_name_len" ]; then
-            max_name_len="$name_len"
-        fi
-    done <<< "$emoji_list"
-
-    echo "Обработка ${total_count} эмодзи из YAML..."
+    echo "Обработка эмодзи из YAML..."
     echo ""
 
-    local uploaded_count=0
-    local skipped_count=0
-    local error_count=0
-    local current_index=0
-
-    # Обрабатываем каждый эмодзи
-    while IFS='|' read -r name src; do
-        [ -z "$name" ] && continue
-
-        ((current_index++)) || true
-        
-        # Форматируем вывод: [1/169] Обработка: a                              ✓ добавлен
-        local status_msg=""
-        local status_symbol=""
-
-        # Проверяем, существует ли уже эмодзи
-        # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
-        if [ -n "$existing_emojis" ] && echo "$existing_emojis" | grep -Fxq "$name"; then
-            status_symbol="⊖"
-            status_msg="уже существует"
-            ((skipped_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
-            continue
-        fi
-
-        # Скачиваем изображение
-        temp_file=$(download_image "$src")
-        if [ $? -ne 0 ]; then
-            status_symbol="✗"
-            status_msg="ошибка загрузки файла"
-            ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
-            continue
-        fi
-
-        # Определяем тип контента
-        local filename
-        filename=$(basename "$src")
-
-        # Sanitization: проверяем на path traversal
-        if [[ "$filename" == *..* ]]; then
-            log_error "Невалидное имя файла (path traversal): ${filename}"
-            rm -f "$temp_file"
-            status_symbol="✗"
-            status_msg="невалидное имя файла"
-            ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
-            continue
-        fi
-
-        local content_type
-        content_type=$(get_content_type "$filename")
-
-        # Валидируем MIME тип перед загрузкой
-        if ! validate_content_type "$content_type"; then
-            rm -f "$temp_file"
-            status_symbol="✗"
-            status_msg="недопустимый MIME тип"
-            ((error_count++)) || true
-            print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
-            continue
-        fi
-
-        # Загружаем эмодзи на сервер
-        local error_msg=""
-        if api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1; then
-            status_symbol="✓"
-            status_msg="добавлен"
-            ((uploaded_count++)) || true
-        else
-            error_msg=$(api_create_emoji "$server_url" "$name" "$temp_file" "$content_type" 2>&1 | head -c 50)
-            status_symbol="✗"
-            status_msg="ошибка: ${error_msg}"
-            ((error_count++)) || true
-        fi
-        
-        print_status "$current_index" "$total_count" "$name" "$status_symbol" "$status_msg" "$max_name_len"
-
-        # Немедленно очищаем временный файл после использования
-        rm -f "$temp_file"
-        temp_file=""
-
-    done <<< "$emoji_list"
-
-    # Выводим статистику
-    echo ""
-    echo "=== Результаты импорта ==="
-    echo "  Всего: ${total_count}"
-    echo "  Добавлено: ${uploaded_count}"
-    echo "  Пропущено: ${skipped_count}"
-    echo "  Ошибок: ${error_count}"
-
-    # Возвращаем ошибку, если были неудачи
-    if [ "$error_count" -gt 0 ]; then
-        return 1
-    fi
-
-    return 0
+    import_emoji_list "$server_url" "$emoji_list" "$existing_emojis" 0
 }
 
 # ------------------------------------------------------------------------------

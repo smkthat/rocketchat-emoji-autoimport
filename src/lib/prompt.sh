@@ -121,8 +121,8 @@ prompt_secret() {
 # Устанавливает переменные окружения:
 #   - ROCKETCHAT_SERVER_URL
 #   - EMOJI_YAML_URL
-#   - ADMIN_USERNAME
-#   - ADMIN_PASSWORD
+#   - ROCKETCHAT_ADMIN_USERNAME
+#   - ROCKETCHAT_ADMIN_PASSWORD
 #
 # Пример:
 #   collect_all_config "" "" ""
@@ -136,8 +136,8 @@ collect_all_config() {
     
     prompt "URL для YAML файла" "$default_yaml_url" "EMOJI_YAML_URL"
     prompt "Rocket.Chat сервер URL" "$default_server_url" "ROCKETCHAT_SERVER_URL"
-    prompt "Rocket.Chat админ username" "$default_username" "ADMIN_USERNAME"
-    prompt_secret "Rocket.Chat админ пароль" "ADMIN_PASSWORD"
+    prompt "Rocket.Chat админ username" "$default_username" "ROCKETCHAT_ADMIN_USERNAME"
+    prompt_secret "Rocket.Chat админ пароль" "ROCKETCHAT_ADMIN_PASSWORD"
     
     echo ""
 }
@@ -157,7 +157,7 @@ confirm_config() {
     echo "Конфигурация:"
     echo "  YAML URL: ${EMOJI_YAML_URL}"
     echo "  Server URL: ${ROCKETCHAT_SERVER_URL}"
-    echo "  Username: ${ADMIN_USERNAME}"
+    echo "  Username: ${ROCKETCHAT_ADMIN_USERNAME}"
     echo "  Password: [скрыто]"
     echo ""
     echo -n "Продолжить? (y/N): "

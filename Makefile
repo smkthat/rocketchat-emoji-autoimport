@@ -3,7 +3,7 @@
 .PHONY: help clean auth import-help rocket-help \
 	gen-all import import-no-prompt \
 	urls yml gen-urls gen-yml \
-	check-deps install-deps \
+	check-deps install-deps init \
 	rocket-setup rocket-start rocket-stop rocket-reset rocket-logs spellcheck \
 
 
@@ -28,10 +28,10 @@ LINE = "$(shell printf '%.0s-' {1..60})"
 gen-all: gen-urls gen-yml  ## Сгенерировать все необходимые файлы
 
 import: gen-all  ## Импорт из output/form.yml с запросом конфигурации
-	@${SRC_PATH}/import.sh --file ${OUTPUT_PATH}/form.yml
+	@${SRC_PATH}/import_emoji.sh --file ${OUTPUT_PATH}/form.yml
 
 import-no-prompt: gen-all  ## Импорт из output/form.yml используя .env (без запроса)
-	@${SRC_PATH}/import.sh --file ${OUTPUT_PATH}/form.yml --no-prompt
+	@${SRC_PATH}/import_emoji.sh --file ${OUTPUT_PATH}/form.yml --no-prompt
 
 # Category: Вспомогательные цели
 
@@ -98,6 +98,16 @@ install-deps:  ## Установить отсутствующие зависим
 	fi
 	@echo "Готово."
 
+init: install-deps  ## Установить зависимости и создать .env (если отсутствует)
+	@if [ ! -f .env ]; then \
+		echo "Создание .env из .env.example..."; \
+		grep -v '^#' .env.example | grep -v '^$$' > .env; \
+		echo "  ✓ .env создан"; \
+	else \
+		echo "  ✓ .env уже существует"; \
+	fi
+	@echo "Инициализация завершена."
+
 # Category: Тестирование
 
 rocket-setup:  ## Настроить и запустить локальный Rocket.Chat (Docker)
@@ -137,6 +147,9 @@ spellcheck:  ## Проверить синтаксис bash-скриптов в s
 	done
 	@echo "Все скрипты прошли проверку."
 
+lint: check-deps spellcheck  ## Проверить зависимости и синтаксис скриптов
+	@echo "Полная проверка проекта завершена."
+
 # Category: Утилиты
 
 clean: ## Очистить output от txt и yml/yaml файлов
@@ -146,8 +159,8 @@ clean: ## Очистить output от txt и yml/yaml файлов
 		${OUTPUT_PATH}/*.yaml 
 	@echo "Очистка выполнена."
 
-import-help: ## Показать справку по импорту (import.sh)
-	@${SRC_PATH}/import.sh --help
+import-help: ## Показать справку по импорту (import_emoji.sh)
+	@${SRC_PATH}/import_emoji.sh --help
 
 rocket-help: ## Показать справку по установке локального Rocket.Chat (setup-rocketchat.sh)
 	@${HELPER_SCRIPTS_PATH}/setup-rocketchat.sh --help
