@@ -6,6 +6,8 @@
 #   ./banner.sh
 #
 
+set -euo pipefail
+
 show_banner() {
     cat << 'EOF'
 

@@ -6,6 +6,8 @@
 # установку значений по умолчанию и валидацию конфигурации.
 #
 
+set -euo pipefail
+
 # ------------------------------------------------------------------------------
 # Переменные окружения (значения по умолчанию)
 # ------------------------------------------------------------------------------
@@ -17,8 +19,8 @@
 : "${EMOJI_YAML_URL:=}"
 
 # Учётные данные администратора
-: "${ADMIN_USERNAME:=}"
-: "${ADMIN_PASSWORD:=}"
+: "${ROCKETCHAT_ADMIN_USERNAME:=}"
+: "${ROCKETCHAT_ADMIN_PASSWORD:=}"
 
 # Режим отладки (0 или 1)
 : "${DEBUG:=0}"
@@ -79,8 +81,8 @@ load_env() {
 # Обязательные переменные:
 #   - ROCKETCHAT_SERVER_URL
 #   - EMOJI_YAML_URL
-#   - ADMIN_USERNAME
-#   - ADMIN_PASSWORD
+#   - ROCKETCHAT_ADMIN_USERNAME
+#   - ROCKETCHAT_ADMIN_PASSWORD
 #
 # Возвращает:
 #   0 — если все переменные установлены
@@ -102,13 +104,13 @@ validate_config() {
         has_error=1
     fi
 
-    if [ -z "$ADMIN_USERNAME" ]; then
-        echo "Отсутствует обязательная переменная: ADMIN_USERNAME" >&2
+    if [ -z "$ROCKETCHAT_ADMIN_USERNAME" ]; then
+        echo "Отсутствует обязательная переменная: ROCKETCHAT_ADMIN_USERNAME" >&2
         has_error=1
     fi
 
-    if [ -z "$ADMIN_PASSWORD" ]; then
-        echo "Отсутствует обязательная переменная: ADMIN_PASSWORD" >&2
+    if [ -z "$ROCKETCHAT_ADMIN_PASSWORD" ]; then
+        echo "Отсутствует обязательная переменная: ROCKETCHAT_ADMIN_PASSWORD" >&2
         has_error=1
     fi
 
@@ -165,7 +167,7 @@ print_config() {
     echo "Конфигурация:"
     echo "  ROCKETCHAT_SERVER_URL: ${ROCKETCHAT_SERVER_URL}"
     echo "  EMOJI_YAML_URL: ${EMOJI_YAML_URL}"
-    echo "  ADMIN_USERNAME: ${ADMIN_USERNAME}"
-    echo "  ADMIN_PASSWORD: [скрыто]"
+    echo "  ROCKETCHAT_ADMIN_USERNAME: ${ROCKETCHAT_ADMIN_USERNAME}"
+    echo "  ROCKETCHAT_ADMIN_PASSWORD: [скрыто]"
     echo "  DEBUG: ${DEBUG}"
 }

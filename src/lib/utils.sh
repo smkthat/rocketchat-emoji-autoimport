@@ -6,6 +6,8 @@
 # типа контента и других вспомогательных операций.
 #
 
+set -euo pipefail
+
 # ------------------------------------------------------------------------------
 # Константы
 # ------------------------------------------------------------------------------
@@ -70,16 +72,28 @@ log_debug() {
 #   get_content_type "image.png"  # вернёт "image/png"
 get_content_type() {
     local filename="$1"
-    
+
+    # Валидируем входной параметр
+    if [ -z "$filename" ]; then
+        log_error "get_content_type: имя файла не может быть пустым"
+        return 1
+    fi
+
+    # Sanitization: проверяем на path traversal
+    if [[ "$filename" == *..* ]]; then
+        log_error "get_content_type: невалидное имя файла (path traversal)"
+        return 1
+    fi
+
     # Удаляем query-параметры из URL если есть
     filename="${filename%%\?*}"
-    
+
     # Извлекаем расширение
     local ext="${filename##*.}"
-    
+
     # Конвертируем в нижний регистр
     ext=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
-    
+
     case "$ext" in
         png)
             echo "image/png"
@@ -102,12 +116,18 @@ get_content_type() {
 # Создаёт временный файл и возвращает его путь.
 #
 # Возвращает:
-#   Путь к временному файлу
+#   0 — если файл создан успешно (путь в stdout)
+#   1 — если не удалось создать файл
 #
 # Пример:
-#   temp_file=$(create_temp_file)
+#   temp_file=$(create_temp_file) || exit 1
 create_temp_file() {
-    mktemp
+    local temp_file
+    if ! temp_file=$(mktemp 2>/dev/null); then
+        log_error "Не удалось создать временный файл"
+        return 1
+    fi
+    echo "$temp_file"
 }
 
 # Удаляет временный файл, если он существует.

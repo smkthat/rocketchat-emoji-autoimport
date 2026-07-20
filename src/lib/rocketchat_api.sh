@@ -10,6 +10,8 @@
 #   - jq
 #
 
+set -euo pipefail
+
 # ------------------------------------------------------------------------------
 # Глобальные переменные сессии
 # ------------------------------------------------------------------------------
@@ -45,15 +47,19 @@ api_login() {
     local server_url="$1"
     local username="$2"
     local password="$3"
-    
+
     local login_response
     local response_http_code
-    
+    local json_data
+
+    # Формируем JSON с чувствительными данными в переменной (не в командной строке)
+    json_data=$(printf '{"user":"%s","password":"%s"}' "$username" "$password")
+
     # Выполняем запрос на аутентификацию
     login_response=$(curl -s -w "\n%{http_code}" -X POST "${server_url}/api/v1/login" \
         -H "Content-Type: application/json" \
-        -d "{\"user\":\"${username}\",\"password\":\"${password}\"}")
-    
+        --data-binary "$json_data")
+
     # Последняя строка — HTTP код
     response_http_code=$(echo "$login_response" | tail -n1)
     login_response=$(echo "$login_response" | sed '$d')
@@ -61,11 +67,16 @@ api_login() {
     # Проверяем HTTP статус
     if [ "$response_http_code" != "200" ]; then
         local error_message
-        error_message=$(echo "$login_response" | jq -r '.message // "Неизвестная ошибка"')
+        # Проверяем что ответ валидный JSON перед парсингом
+        if echo "$login_response" | jq -e '.' >/dev/null 2>&1; then
+            error_message=$(echo "$login_response" | jq -r '.message // "Неизвестная ошибка"')
+        else
+            error_message="Невалидный JSON ответ"
+        fi
         echo "Ошибка аутентификации (HTTP ${response_http_code}): ${error_message}" >&2
         return 1
     fi
-    
+
     # Извлекаем токены
     AUTH_TOKEN=$(echo "$login_response" | jq -r '.data.authToken')
     USER_ID=$(echo "$login_response" | jq -r '.data.userId')
@@ -94,21 +105,46 @@ api_login() {
 #   $1 — server_url: URL Rocket.Chat сервера
 #
 # Возвращает:
-#   Список имён эмодзи (по одному в строке)
+#   0 — если запрос успешен (список имён в stdout)
+#   1 — если произошла ошибка сети или API
+#
+# Выводит:
+#   Список имён эмодзи (по одному в строке) или пустую строку если эмодзи нет
 #
 # Пример:
-#   existing_emojis=$(api_list_emoji_names "$ROCKETCHAT_SERVER_URL")
+#   existing_emojis=$(api_list_emoji_names "$ROCKETCHAT_SERVER_URL") || echo "Ошибка API"
 api_list_emoji_names() {
     local server_url="$1"
-    
     local response
-    response=$(curl -s "${server_url}/api/v1/emoji-custom.list" \
+    local http_code
+
+    # Выполняем запрос с проверкой HTTP статуса
+    response=$(curl -s -w "\n%{http_code}" "${server_url}/api/v1/emoji-custom.list" \
         -H "X-Auth-Token: ${AUTH_TOKEN}" \
-        -H "X-User-Id: ${USER_ID}")
-    
+        -H "X-User-Id: ${USER_ID}" \
+        --connect-timeout 10 \
+        --max-time 30)
+
+    # Извлекаем HTTP код (последняя строка)
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Проверяем HTTP статус
+    if [ "$http_code" != "200" ]; then
+        echo "Ошибка API: HTTP ${http_code}" >&2
+        return 1
+    fi
+
+    # Проверяем, что ответ валидный JSON
+    if ! echo "$response" | jq -e '.' >/dev/null 2>&1; then
+        echo "Ошибка: невалидный JSON ответ" >&2
+        return 1
+    fi
+
     # Извлекаем имена эмодзи из ответа
     # Структура: { emojis: { update: [{ name: "..." }, ...] } }
     echo "$response" | jq -r '.emojis.update[].name' 2>/dev/null || echo ""
+    return 0
 }
 
 # Загружает новый эмодзи на сервер.
@@ -125,23 +161,82 @@ api_list_emoji_names() {
 #
 # Пример:
 #   api_create_emoji "$ROCKETCHAT_SERVER_URL" "smile" "/tmp/smile.png" "image/png"
+#
+# Документация API:
+#   https://github.com/FXinnovation/RocketChat-docs/tree/master/developer-guides/rest-api/emoji-custom/create
 api_create_emoji() {
     local server_url="$1"
     local name="$2"
     local image_path="$3"
     local content_type="${4:-application/octet-stream}"
-    
+
+    # Валидируем входные параметры
+    if [ -z "$server_url" ]; then
+        echo "api_create_emoji: server_url не может быть пустым" >&2
+        return 1
+    fi
+    if [ -z "$name" ]; then
+        echo "api_create_emoji: name не может быть пустым" >&2
+        return 1
+    fi
+    if [ -z "$image_path" ]; then
+        echo "api_create_emoji: image_path не может быть пустым" >&2
+        return 1
+    fi
+    if [ ! -f "$image_path" ]; then
+        echo "api_create_emoji: файл не существует: $image_path" >&2
+        return 1
+    fi
+
     local filename
     filename=$(basename "$image_path")
-    
+
     local response
-    response=$(curl -s -X POST "${server_url}/api/v1/emoji-custom.create" \
+    local http_code
+    
+    # Выполняем запрос с проверкой HTTP статуса
+    response=$(curl -s -w "\n%{http_code}" -X POST "${server_url}/api/v1/emoji-custom.create" \
         -H "X-Auth-Token: ${AUTH_TOKEN}" \
         -H "X-User-Id: ${USER_ID}" \
         -F "name=${name}" \
         -F "aliases=" \
         -F "emoji=@${image_path};filename=${filename};type=${content_type}")
     
+    # Извлекаем HTTP код
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+    
+    # Обрабатываем HTTP ошибки
+    case "$http_code" in
+        200)
+            # Успешный ответ, продолжаем обработку
+            ;;
+        401)
+            echo "Ошибка API: неавторизованный доступ (HTTP 401)" >&2
+            return 1
+            ;;
+        403)
+            echo "Ошибка API: доступ запрещён (HTTP 403)" >&2
+            return 1
+            ;;
+        404)
+            echo "Ошибка API: ресурс не найден (HTTP 404)" >&2
+            return 1
+            ;;
+        429)
+            echo "Ошибка API: слишком много запросов (HTTP 429)" >&2
+            return 1
+            ;;
+        500)
+            echo "Ошибка API: внутренняя ошибка сервера (HTTP 500)" >&2
+            return 1
+            ;;
+        *)
+            echo "Ошибка API: HTTP ${http_code}" >&2
+            return 1
+            ;;
+    esac
+
     local success
     success=$(echo "$response" | jq -r '.success')
     
@@ -174,6 +269,7 @@ api_create_emoji() {
 emoji_exists() {
     local name="$1"
     local emoji_list="$2"
-    
-    echo "$emoji_list" | grep -q "^${name}$"
+
+    # Используем grep -Fx для точного совпадения всей строки (без интерпретации спецсимволов)
+    echo "$emoji_list" | grep -Fxq "$name"
 }

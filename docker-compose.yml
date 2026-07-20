@@ -31,17 +31,23 @@ services:
     restart: "no"
     command: >
       mongosh --host db:27017 --eval '
-        try {
+        const status = rs.status();
+        if (status.ok !== 1) {
           rs.initiate({
             _id: "rs0",
             members: [{ _id: 0, host: "db:27017" }]
           });
           print("Replica set initialized");
-        } catch (e) {
-          print("Replica set may already be initialized: " + e);
+        } else {
+          print("Replica set already running");
         }
-        return 0;
       '
+    healthcheck:
+      test: mongosh --host db:27017 --quiet --eval 'rs.status().ok === 1'
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   # Rocket.Chat
   rocketchat:

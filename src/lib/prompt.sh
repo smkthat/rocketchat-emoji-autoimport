@@ -6,6 +6,33 @@
 # через командную строку с поддержкой значений по умолчанию.
 #
 
+set -euo pipefail
+
+# ------------------------------------------------------------------------------
+# Вспомогательные функции
+# ------------------------------------------------------------------------------
+
+# Валидирует имя переменной окружения.
+#
+# Аргументы:
+#   $1 — var_name: Имя переменной для проверки
+#
+# Возвращает:
+#   0 — если имя валидно
+#   1 — если имя невалидно
+#
+# Пример:
+#   validate_var_name "MY_VAR" || return 1
+validate_var_name() {
+    local var_name="$1"
+
+    if [[ ! "$var_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        echo "Ошибка: невалидное имя переменной: $var_name" >&2
+        return 1
+    fi
+    return 0
+}
+
 # ------------------------------------------------------------------------------
 # Основные функции ввода
 # ------------------------------------------------------------------------------
@@ -30,22 +57,25 @@ prompt() {
     local default_value="$2"
     local var_name="$3"
     local value
-    
+
+    # Валидируем имя переменной
+    validate_var_name "$var_name" || return 1
+
     # Формируем приглашение с значением по умолчанию
     if [ -n "$default_value" ]; then
         echo -n "${prompt_text} [${default_value}]: "
     else
         echo -n "${prompt_text}: "
     fi
-    
+
     # Читаем ввод пользователя
     read -r value
-    
+
     # Используем значение по умолчанию, если ввод пуст
     if [ -z "$value" ] && [ -n "$default_value" ]; then
         value="$default_value"
     fi
-    
+
     # Экспортируем результат в переменную
     export "$var_name"="$value"
 }
@@ -63,13 +93,16 @@ prompt_secret() {
     local prompt_text="$1"
     local var_name="$2"
     local value
-    
+
+    # Валидируем имя переменной
+    validate_var_name "$var_name" || return 1
+
     echo -n "${prompt_text}: "
-    
+
     # Читаем ввод без отображения символов
     read -rs value
     echo ""  # Новая строка после ввода
-    
+
     # Экспортируем результат в переменную
     export "$var_name"="$value"
 }
@@ -88,8 +121,8 @@ prompt_secret() {
 # Устанавливает переменные окружения:
 #   - ROCKETCHAT_SERVER_URL
 #   - EMOJI_YAML_URL
-#   - ADMIN_USERNAME
-#   - ADMIN_PASSWORD
+#   - ROCKETCHAT_ADMIN_USERNAME
+#   - ROCKETCHAT_ADMIN_PASSWORD
 #
 # Пример:
 #   collect_all_config "" "" ""
@@ -103,8 +136,8 @@ collect_all_config() {
     
     prompt "URL для YAML файла" "$default_yaml_url" "EMOJI_YAML_URL"
     prompt "Rocket.Chat сервер URL" "$default_server_url" "ROCKETCHAT_SERVER_URL"
-    prompt "Rocket.Chat админ username" "$default_username" "ADMIN_USERNAME"
-    prompt_secret "Rocket.Chat админ пароль" "ADMIN_PASSWORD"
+    prompt "Rocket.Chat админ username" "$default_username" "ROCKETCHAT_ADMIN_USERNAME"
+    prompt_secret "Rocket.Chat админ пароль" "ROCKETCHAT_ADMIN_PASSWORD"
     
     echo ""
 }
@@ -124,7 +157,7 @@ confirm_config() {
     echo "Конфигурация:"
     echo "  YAML URL: ${EMOJI_YAML_URL}"
     echo "  Server URL: ${ROCKETCHAT_SERVER_URL}"
-    echo "  Username: ${ADMIN_USERNAME}"
+    echo "  Username: ${ROCKETCHAT_ADMIN_USERNAME}"
     echo "  Password: [скрыто]"
     echo ""
     echo -n "Продолжить? (y/N): "

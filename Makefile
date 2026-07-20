@@ -1,6 +1,11 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help urls auth import import-no-prompt gen_data gen_yml check-deps install-deps spellcheck rocket-setup rocket-start rocket-stop rocket-reset rocket-logs
+.PHONY: help clean auth import-help rocket-help \
+	gen-all import import-no-prompt \
+	urls yml gen-urls gen-yml \
+	check-deps install-deps init \
+	rocket-setup rocket-start rocket-stop rocket-reset rocket-logs spellcheck \
+
 
 # Detect OS
 UNAME_S := $(shell uname -s)
@@ -23,10 +28,10 @@ LINE = "$(shell printf '%.0s-' {1..60})"
 gen-all: gen-urls gen-yml  ## Сгенерировать все необходимые файлы
 
 import: gen-all  ## Импорт из output/form.yml с запросом конфигурации
-	@${SRC_PATH}/import.sh --file ${OUTPUT_PATH}/form.yml
+	@${SRC_PATH}/import_emoji.sh --file ${OUTPUT_PATH}/form.yml
 
 import-no-prompt: gen-all  ## Импорт из output/form.yml используя .env (без запроса)
-	@${SRC_PATH}/import.sh --file ${OUTPUT_PATH}/form.yml --no-prompt
+	@${SRC_PATH}/import_emoji.sh --file ${OUTPUT_PATH}/form.yml --no-prompt
 
 # Category: Вспомогательные цели
 
@@ -48,10 +53,12 @@ gen-yml:  ## Сгенерировать output/form.yml файл со списк
 		echo "Сначала выполните: make gen-urls или make gen-all" >&2; \
 		exit 1; \
 	fi
+	@if [ ! -s ${OUTPUT_PATH}/urls.txt ]; then \
+		echo "Ошибка: ${OUTPUT_PATH}/urls.txt пуст." >&2; \
+		echo "Проверьте наличие emoji в репозитории" >&2; \
+		exit 1; \
+	fi
 	@make yml > ${OUTPUT_PATH}/form.yml
-
-auth:  ## Аутентификация в GitHub CLI (интерактив)
-	@gh auth login
 
 # Category: Зависимости
 
@@ -90,6 +97,16 @@ install-deps:  ## Установить отсутствующие зависим
 		exit 1; \
 	fi
 	@echo "Готово."
+
+init: install-deps  ## Установить зависимости и создать .env (если отсутствует)
+	@if [ ! -f .env ]; then \
+		echo "Создание .env из .env.example..."; \
+		grep -v '^#' .env.example | grep -v '^$$' > .env; \
+		echo "  ✓ .env создан"; \
+	else \
+		echo "  ✓ .env уже существует"; \
+	fi
+	@echo "Инициализация завершена."
 
 # Category: Тестирование
 
@@ -130,6 +147,9 @@ spellcheck:  ## Проверить синтаксис bash-скриптов в s
 	done
 	@echo "Все скрипты прошли проверку."
 
+check: check-deps spellcheck  ## Проверить зависимости и синтаксис скриптов
+	@echo "Полная проверка проекта завершена."
+
 # Category: Утилиты
 
 clean: ## Очистить output от txt и yml/yaml файлов
@@ -139,11 +159,14 @@ clean: ## Очистить output от txt и yml/yaml файлов
 		${OUTPUT_PATH}/*.yaml 
 	@echo "Очистка выполнена."
 
-import-help: ## Показать справку по импорту (import.sh)
-	@${SRC_PATH}/import.sh --help
+import-help: ## Показать справку по импорту (import_emoji.sh)
+	@${SRC_PATH}/import_emoji.sh --help
 
 rocket-help: ## Показать справку по установке локального Rocket.Chat (setup-rocketchat.sh)
 	@${HELPER_SCRIPTS_PATH}/setup-rocketchat.sh --help
+
+auth:  ## Аутентификация в GitHub CLI (интерактив)
+	@gh auth login
 
 help:  ## Показать это сообщение
 	@${HELPER_SCRIPTS_PATH}/banner.sh
